@@ -1,0 +1,5 @@
+{
+  "name": "Hệ thống Quản lý Công việc",
+  "description": "Ứng dụng quản lý danh mục công việc, giao việc theo phòng ban và theo dõi tiến độ hoàn thành chuyên nghiệp.",
+  "requestFramePermissions": []
+}
