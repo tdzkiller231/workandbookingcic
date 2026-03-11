@@ -34,6 +34,7 @@ import {
   CheckSquare,
   Eye,
   FileText,
+  Printer,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -320,6 +321,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'catalog' | 'assignments' | 'dashboard' | 'room_bookings' | 'vehicle_bookings' | 'booking_approval' | 'booking_logs'>('dashboard');
   const [approvalSubTab, setApprovalSubTab] = useState<'Phòng họp' | 'Xe công tác'>('Phòng họp');
   const [approvalStatusFilter, setApprovalStatusFilter] = useState<'Tất cả' | 'Chờ duyệt' | 'Đã xác nhận' | 'Từ chối'>('Tất cả');
+  const [dashboardSubTab, setDashboardSubTab] = useState<'overview' | 'reports'>('overview');
   const [catalog, setCatalog] = useState<TaskCatalog[]>(() => {
     const version = localStorage.getItem('task_catalog_version');
     const saved = localStorage.getItem('task_catalog');
@@ -640,6 +642,180 @@ export default function App() {
     );
   };
 
+  // --- Report Print ---
+  const handlePrintReport = (type: 'task_dept' | 'task_detail' | 'room_stats' | 'vehicle_stats' | 'booking_all') => {
+    const today = format(new Date(), 'dd/MM/yyyy');
+    const baseStyles = `
+      <style>
+        * { margin:0; padding:0; box-sizing:border-box; font-family:'Times New Roman',serif; }
+        body { padding:20mm 20mm 20mm 25mm; font-size:13px; color:#000; }
+        .org-block { text-align:center; margin-bottom:6px; }
+        .org-name { font-weight:bold; font-size:13px; text-transform:uppercase; }
+        .divider { border-top:1.5px solid #000; width:40%; margin:6px auto; }
+        .report-title { text-align:center; margin:20px 0 4px; font-size:15px; font-weight:bold; text-transform:uppercase; letter-spacing:0.5px; }
+        .report-period { text-align:center; font-size:12px; font-style:italic; margin-bottom:16px; }
+        table { width:100%; border-collapse:collapse; margin:12px 0; font-size:12px; }
+        th, td { border:1px solid #444; padding:6px 8px; }
+        th { background:#d0d0d0; font-weight:bold; text-align:center; }
+        td.c { text-align:center; }
+        tr.total td { font-weight:bold; background:#e8e8e8; }
+        .note { font-size:11px; font-style:italic; margin-top:8px; }
+        .sig { margin-top:48px; display:flex; justify-content:space-between; }
+        .sig-box { text-align:center; min-width:180px; font-size:12px; }
+        .sig-box p { font-weight:bold; }
+        .sig-line { margin-top:56px; font-weight:bold; text-decoration:underline; }
+        @media print { body { padding:10mm 15mm; } }
+      </style>`;
+
+    const docHeader = `<div class="org-block">
+      <div class="org-name">Công ty TNHH ABC Tech</div>
+      <div style="font-size:11px">15 Lý Thường Kiệt, Hoàn Kiếm, Hà Nội &nbsp;|&nbsp; Tel: (024) 3838-XXXX</div>
+      <div class="divider"></div>
+    </div>`;
+
+    const sig = `<div class="sig">
+      <div class="sig-box">
+        <p>Người lập báo cáo</p>
+        <p style="font-style:italic;font-size:11px;font-weight:normal">(Ký, ghi rõ họ tên)</p>
+        <div class="sig-line">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</div>
+      </div>
+      <div class="sig-box">
+        <p>Hà Nội, ngày ${today}</p>
+        <p>Giám đốc</p>
+        <p style="font-style:italic;font-size:11px;font-weight:normal">(Ký, đóng dấu)</p>
+        <div class="sig-line">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</div>
+      </div>
+    </div>`;
+
+    let content = '';
+    if (type === 'task_dept') {
+      const allDepts = (() => {
+        const map: Record<string, { name: string; total: number; inProgress: number; completed: number; overdue: number }> = {};
+        const flatten = (d: { id: string; name: string; children?: typeof DEPARTMENTS }): void => {
+          map[d.id] = { name: d.name, total: 0, completed: 0, inProgress: 0, overdue: 0 };
+          d.children?.forEach(c => flatten(c as any));
+        };
+        DEPARTMENTS.forEach(d => flatten(d as any));
+        assignments.forEach(a => {
+          if (map[a.departmentId]) {
+            map[a.departmentId].total++;
+            if (a.status === 'Hoàn thành') map[a.departmentId].completed++;
+            else if (a.status === 'Đang thực hiện') map[a.departmentId].inProgress++;
+            else map[a.departmentId].overdue++;
+          }
+        });
+        return Object.values(map).filter(d => d.total > 0);
+      })();
+      const total = { total: 0, inProgress: 0, completed: 0, overdue: 0 };
+      allDepts.forEach(d => { total.total += d.total; total.inProgress += d.inProgress; total.completed += d.completed; total.overdue += d.overdue; });
+      const rows = allDepts.map((d, i) => {
+        const rate = d.total > 0 ? Math.round(d.completed / d.total * 100) : 0;
+        return `<tr><td class="c">${i+1}</td><td>${d.name}</td><td class="c">${d.total}</td><td class="c">${d.inProgress}</td><td class="c">${d.completed}</td><td class="c">${d.overdue}</td><td class="c">${rate}%</td></tr>`;
+      }).join('');
+      const totalRate = total.total > 0 ? Math.round(total.completed / total.total * 100) : 0;
+      content = `<p class="report-title">Báo cáo tổng hợp tình hình thực hiện công việc</p>
+        <p class="report-period">Tường kỳ: Tháng 03/2026 &nbsp;—&nbsp; Ngày lập: ${today}</p>
+        <table><thead><tr>
+          <th rowspan="2" style="width:38px">STT</th><th rowspan="2">Phòng ban</th>
+          <th rowspan="2" style="width:62px">Tổng số CV</th>
+          <th colspan="3">Được phân theo trạng thái</th>
+          <th rowspan="2" style="width:80px">Tỷ lệ HT (%)</th>
+        </tr><tr>
+          <th style="width:90px">Đang thực hiện</th>
+          <th style="width:85px">Hoàn thành</th>
+          <th style="width:70px">Trễ hạn</th>
+        </tr></thead><tbody>${rows}
+        <tr class="total"><td class="c"></td><td>Cộng</td><td class="c">${total.total}</td><td class="c">${total.inProgress}</td><td class="c">${total.completed}</td><td class="c">${total.overdue}</td><td class="c">${totalRate}%</td></tr>
+        </tbody></table>
+        <p class="note">* Ghi chú: CV = Công việc. Số liệu thống kê tính đến ngày ${today}.</p>`;
+    } else if (type === 'task_detail') {
+      const rows = assignments.map((a, i) => {
+        const emp = EMPLOYEES.find(e => e.id === a.employeeId);
+        const dept = flatDepts.find(d => d.id === a.departmentId);
+        const task = catalog.find(c => c.id === a.catalogId);
+        const statusColor = a.status === 'Hoàn thành' ? 'color:#16a34a' : a.status === 'Trễ hạn' ? 'color:#dc2626' : '';
+        return `<tr><td class="c">${i+1}</td><td>${emp?.name||'N/A'}</td><td>${dept?.name||'N/A'}</td><td>${task?.name||'N/A'}</td><td>${task?.category||''}</td><td class="c">${a.deadline}</td><td class="c" style="${statusColor}">${a.status}</td></tr>`;
+      }).join('');
+      content = `<p class="report-title">Báo cáo chi tiết giao việc toàn công ty</p>
+        <p class="report-period">Tính đến ngày ${today}</p>
+        <table><thead><tr>
+          <th style="width:38px">STT</th><th>Nhân viên</th><th>Phòng ban</th><th>Đầu việc</th><th>Nhóm việc</th><th style="width:90px">Hạn HT</th><th style="width:100px">Trạng thái</th>
+        </tr></thead><tbody>${rows}</tbody></table>
+        <p class="note">* Tổng số: ${assignments.length} nhiệm vụ giao. Số liệu tính đến ngày ${today}.</p>`;
+    } else if (type === 'room_stats') {
+      const roomRows = ROOM_RESOURCES.map((r, i) => {
+        const bk = bookings.filter(b => b.resourceId === r.id);
+        const confirmed = bk.filter(b => b.status === 'Đã xác nhận').length;
+        const pending   = bk.filter(b => b.status === 'Chờ duyệt').length;
+        const cancelled = bk.filter(b => b.status === 'Đã hủy').length;
+        const rejected  = bk.filter(b => b.status === 'Từ chối').length;
+        const hours = bk.filter(b => b.status === 'Đã xác nhận').reduce((s, b) => {
+          const diff = (new Date(b.endTime).getTime() - new Date(b.startTime).getTime()) / 36e5;
+          return s + diff;
+        }, 0);
+        return `<tr><td class="c">${i+1}</td><td>${r.name}</td><td class="c">${r.floor}</td><td class="c">${r.capacity}</td><td class="c">${bk.length}</td><td class="c">${confirmed}</td><td class="c">${pending}</td><td class="c">${cancelled}</td><td class="c">${rejected}</td><td class="c">${hours.toFixed(1)}</td></tr>`;
+      });
+      const totBk       = bookings.filter(b => b.resourceType === 'Phòng họp').length;
+      const totConfirm  = bookings.filter(b => b.resourceType === 'Phòng họp' && b.status === 'Đã xác nhận').length;
+      const totHours    = bookings.filter(b => b.resourceType === 'Phòng họp' && b.status === 'Đã xác nhận').reduce((s, b) => s + (new Date(b.endTime).getTime() - new Date(b.startTime).getTime()) / 36e5, 0);
+      content = `<p class="report-title">Báo cáo thống kê sử dụng phòng họp</p>
+        <p class="report-period">Tháng 03/2026 &nbsp;—&nbsp; Ngày lập: ${today}</p>
+        <table><thead><tr>
+          <th style="width:38px">STT</th><th>Phòng họp</th><th style="width:55px">Tầng</th><th style="width:60px">Sức chứa</th>
+          <th style="width:60px">Tổng lượt đặt</th><th style="width:65px">Đã xác nhận</th><th style="width:65px">Chờ duyệt</th>
+          <th style="width:55px">Đã hủy</th><th style="width:55px">Từ chối</th><th style="width:65px">Tổng giờ SD</th>
+        </tr></thead><tbody>${roomRows.join('')}
+        <tr class="total"><td class="c"></td><td>Cộng</td><td></td><td></td><td class="c">${totBk}</td><td class="c">${totConfirm}</td><td class="c"></td><td class="c"></td><td class="c"></td><td class="c">${totHours.toFixed(1)}</td></tr>
+        </tbody></table>
+        <p class="note">* SD = Sử dụng. Số giờ tính theo các lịch đã xác nhận. Tính đến ngày ${today}.</p>`;
+    } else if (type === 'vehicle_stats') {
+      const vehs = VEHICLE_RESOURCES.map((v, i) => {
+        const bk = bookings.filter(b => b.resourceId === v.id);
+        const confirmed = bk.filter(b => b.status === 'Đã xác nhận').length;
+        const pending   = bk.filter(b => b.status === 'Chờ duyệt').length;
+        const cancelled = bk.filter(b => b.status === 'Đã hủy' || b.status === 'Từ chối').length;
+        return `<tr><td class="c">${i+1}</td><td>${v.name}</td><td class="c">${v.vehicleType}</td><td class="c">${v.plateNumber}</td><td class="c">${v.seats}</td><td class="c">${bk.length}</td><td class="c">${confirmed}</td><td class="c">${pending}</td><td class="c">${cancelled}</td></tr>`;
+      });
+      const totBk      = bookings.filter(b => b.resourceType === 'Xe công tác').length;
+      const totConfirm = bookings.filter(b => b.resourceType === 'Xe công tác' && b.status === 'Đã xác nhận').length;
+      content = `<p class="report-title">Báo cáo thống kê sử dụng xe công tác</p>
+        <p class="report-period">Tháng 03/2026 &nbsp;—&nbsp; Ngày lập: ${today}</p>
+        <table><thead><tr>
+          <th style="width:38px">STT</th><th>Phương tiện</th><th style="width:65px">Loại xe</th>
+          <th style="width:95px">Biển số</th><th style="width:55px">Số chỗ</th>
+          <th style="width:65px">Tổng lượt đặt</th><th style="width:70px">Đã xác nhận</th>
+          <th style="width:65px">Chờ duyệt</th><th style="width:70px">Hủy / Từ chối</th>
+        </tr></thead><tbody>${vehs.join('')}
+        <tr class="total"><td class="c"></td><td>Cộng</td><td></td><td></td><td class="c"></td><td class="c">${totBk}</td><td class="c">${totConfirm}</td><td class="c"></td><td class="c"></td></tr>
+        </tbody></table>
+        <p class="note">* Số liệu thống kê tính đến ngày ${today}.</p>`;
+    } else if (type === 'booking_all') {
+      const rows = [...bookings].sort((a, b) => a.startTime.localeCompare(b.startTime)).map((b, i) => {
+        const emp  = EMPLOYEES.find(e => e.id === b.userId);
+        const dept = flatDepts.find(d => d.id === emp?.departmentId);
+        const res  = b.resourceType === 'Phòng họp'
+          ? ROOM_RESOURCES.find(r => r.id === b.resourceId)?.name
+          : VEHICLE_RESOURCES.find(v => v.id === b.resourceId)?.name;
+        const statusColor = b.status === 'Đã xác nhận' ? 'color:#16a34a' : b.status === 'Từ chối' || b.status === 'Đã hủy' ? 'color:#dc2626' : b.status === 'Chờ duyệt' ? 'color:#d97706' : '';
+        return `<tr><td class="c">${i+1}</td><td class="c">${b.resourceType}</td><td>${res||'N/A'}</td><td>${emp?.name||'N/A'}</td><td>${dept?.name||''}</td><td class="c" style="font-size:11px">${format(new Date(b.startTime),'dd/MM HH:mm')}</td><td class="c" style="font-size:11px">${format(new Date(b.endTime),'dd/MM HH:mm')}</td><td style="font-size:11px">${b.purpose}</td><td class="c" style="${statusColor};font-size:11px">${b.status}</td></tr>`;
+      }).join('');
+      content = `<p class="report-title">Báo cáo tổng hợp đặt chỗ</p>
+        <p class="report-period">Tháng 03/2026 &nbsp;—&nbsp; Ngày lập: ${today}</p>
+        <table><thead><tr>
+          <th style="width:34px">STT</th><th style="width:75px">Loại TN</th><th>Tài nguyên</th><th>Người đặt</th><th>Phòng ban</th>
+          <th style="width:70px">Bắt đầu</th><th style="width:70px">Kết thúc</th><th>Mục đích</th><th style="width:75px">Trạng thái</th>
+        </tr></thead><tbody>${rows}</tbody></table>
+        <p class="note">* Tổng: ${bookings.length} đặt chỗ. Phòng họp: ${bookings.filter(b=>b.resourceType==='Đã xác nhận').length}. Số liệu tính đến ngày ${today}.</p>`;
+    }
+
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Báo cáo</title>${baseStyles}</head><body>${docHeader}${content}${sig}</body></html>`;
+    const win = window.open('', '_blank', 'width=1000,height=800');
+    win?.document.write(html);
+    win?.document.close();
+    win?.focus();
+    setTimeout(() => win?.print(), 500);
+  };
+
   // --- Dashboard Data ---
   const stats = useMemo(() => {
     const counts = {
@@ -871,7 +1047,7 @@ export default function App() {
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
-              className="space-y-8"
+              className="space-y-6"
             >
               <header className="flex justify-between items-end">
                 <div>
@@ -883,95 +1059,179 @@ export default function App() {
                 </div>
               </header>
 
-              {/* Stats Grid */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <StatCard 
-                  label="Đang thực hiện" 
-                  value={stats['Đang thực hiện']} 
-                  icon={<Clock className="text-blue-500" />}
-                  trend="+2% so với tuần trước"
-                />
-                <StatCard 
-                  label="Hoàn thành" 
-                  value={stats['Hoàn thành']} 
-                  icon={<CheckCircle2 className="text-emerald-500" />}
-                  trend="+15% so với tuần trước"
-                />
-                <StatCard 
-                  label="Trễ hạn" 
-                  value={stats['Trễ hạn']} 
-                  icon={<AlertCircle className="text-red-500" />}
-                  trend="-5% so với tuần trước"
-                />
+              {/* Sub-tabs */}
+              <div className="flex border-b border-black/8">
+                {([{ id: 'overview', label: 'Tổng quan' }, { id: 'reports', label: 'Mẫu báo cáo' }] as const).map(t => (
+                  <button key={t.id} onClick={() => setDashboardSubTab(t.id)}
+                    className={cn(
+                      'relative px-5 py-3 text-sm font-medium transition-colors',
+                      dashboardSubTab === t.id ? 'text-[#1a1a2e]' : 'text-black/40 hover:text-black/60'
+                    )}>
+                    {t.label}
+                    {dashboardSubTab === t.id && <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-orange-500 rounded-t" />}
+                  </button>
+                ))}
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                {/* Chart Section */}
-                <div className="bg-white p-6 rounded-2xl border border-black/5 shadow-sm">
-                  <h3 className="text-lg font-semibold mb-6 flex items-center gap-2">
-                    <BarChart3 size={20} className="text-black/60" />
-                    Phân bổ trạng thái
-                  </h3>
-                  <div className="h-[300px]">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={chartData}
-                          cx="50%"
-                          cy="50%"
-                          innerRadius={60}
-                          outerRadius={80}
-                          paddingAngle={5}
-                          dataKey="value"
-                        >
-                          {chartData.map((entry, index) => (
-                            <Cell key={`cell-${index}`} fill={entry.color} />
-                          ))}
-                        </Pie>
-                        <Tooltip 
-                          contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
-                        />
-                        <Legend verticalAlign="bottom" height={36}/>
-                      </PieChart>
-                    </ResponsiveContainer>
+              {/* Overview sub-tab */}
+              {dashboardSubTab === 'overview' && (
+                <div className="space-y-8">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <StatCard label="Đang thực hiện" value={stats['Đang thực hiện']} icon={<Clock className="text-blue-500" />} trend="+2% so với tuần trước" />
+                    <StatCard label="Hoàn thành" value={stats['Hoàn thành']} icon={<CheckCircle2 className="text-emerald-500" />} trend="+15% so với tuần trước" />
+                    <StatCard label="Trễ hạn" value={stats['Trễ hạn']} icon={<AlertCircle className="text-red-500" />} trend="-5% so với tuần trước" />
+                  </div>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    <div className="bg-white p-6 rounded-2xl border border-black/5 shadow-sm">
+                      <h3 className="text-lg font-semibold mb-6 flex items-center gap-2">
+                        <BarChart3 size={20} className="text-black/60" /> Phân bổ trạng thái
+                      </h3>
+                      <div className="h-[300px]">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie data={chartData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
+                              {chartData.map((entry, index) => <Cell key={`cell-${index}`} fill={entry.color} />)}
+                            </Pie>
+                            <Tooltip contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }} />
+                            <Legend verticalAlign="bottom" height={36} />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+                    <div className="bg-white p-6 rounded-2xl border border-black/5 shadow-sm">
+                      <h3 className="text-lg font-semibold mb-6 flex items-center gap-2">
+                        <Users size={20} className="text-black/60" /> Tổng hợp theo phòng ban
+                      </h3>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="text-left text-black/40 border-bottom border-black/5">
+                              <th className="pb-3 font-medium">Phòng ban</th>
+                              <th className="pb-3 font-medium text-center">Tổng</th>
+                              <th className="pb-3 font-medium text-center">Xong</th>
+                              <th className="pb-3 font-medium text-center">Trễ</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-black/5">
+                            {deptStats.map((d, i) => (
+                              <tr key={i}>
+                                <td className="py-3 font-medium">{d.name}</td>
+                                <td className="py-3 text-center">{d.total}</td>
+                                <td className="py-3 text-center text-emerald-600">{d.completed}</td>
+                                <td className="py-3 text-center text-red-600">{d.overdue}</td>
+                              </tr>
+                            ))}
+                            {deptStats.length === 0 && (
+                              <tr><td colSpan={4} className="py-8 text-center text-black/20 italic">Chưa có dữ liệu giao việc</td></tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
                   </div>
                 </div>
+              )}
 
-                {/* Dept Table Section */}
-                <div className="bg-white p-6 rounded-2xl border border-black/5 shadow-sm">
-                  <h3 className="text-lg font-semibold mb-6 flex items-center gap-2">
-                    <Users size={20} className="text-black/60" />
-                    Tổng hợp theo phòng ban
-                  </h3>
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="text-left text-black/40 border-bottom border-black/5">
-                          <th className="pb-3 font-medium">Phòng ban</th>
-                          <th className="pb-3 font-medium text-center">Tổng</th>
-                          <th className="pb-3 font-medium text-center">Xong</th>
-                          <th className="pb-3 font-medium text-center">Trễ</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-black/5">
-                        {deptStats.map((d, i) => (
-                          <tr key={i} className="group">
-                            <td className="py-3 font-medium">{d.name}</td>
-                            <td className="py-3 text-center">{d.total}</td>
-                            <td className="py-3 text-center text-emerald-600">{d.completed}</td>
-                            <td className="py-3 text-center text-red-600">{d.overdue}</td>
-                          </tr>
-                        ))}
-                        {deptStats.length === 0 && (
-                          <tr>
-                            <td colSpan={4} className="py-8 text-center text-black/20 italic">Chưa có dữ liệu giao việc</td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
+              {/* Reports sub-tab */}
+              {dashboardSubTab === 'reports' && (
+                <div className="space-y-6">
+                  <div className="flex items-center gap-3">
+                    <FileText size={20} className="text-black/40" />
+                    <div>
+                      <p className="font-semibold">Mẫu báo cáo chuẩn</p>
+                      <p className="text-xs text-black/40">Nhấp “In báo cáo” để xem trước và xuất ra máy in / PDF. Dữ liệu tính theo số liệu hiện tại.</p>
+                    </div>
+                  </div>
+
+                  {/* Task reports */}
+                  <div>
+                    <h3 className="text-xs font-bold text-black/30 uppercase tracking-widest mb-3">Quản lý công việc</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <ReportCard
+                        code="BC-CV01"
+                        title="Tổng hợp công việc theo phòng ban"
+                        desc="Bảng thống kê số lượng công việc chia theo từng phòng ban: đang TH, hoàn thành, trễ hạn, tỷ lệ hoàn thành."
+                        icon={<Users size={22} className="text-blue-500" />}
+                        color="bg-blue-50 border-blue-100"
+                        preview={[
+                          ['Phòng ban', 'Tổng', 'Đang TH', 'HT', 'Trễ', 'Tỷ lệ'],
+                          ...deptStats.slice(0, 3).map(d => [d.name, String(d.total), String(d.inProgress), String(d.completed), String(d.overdue), d.total > 0 ? Math.round(d.completed/d.total*100)+'%' : '0%']),
+                        ]}
+                        onPrint={() => handlePrintReport('task_dept')}
+                      />
+                      <ReportCard
+                        code="BC-CV02"
+                        title="Chi tiết giao việc toàn công ty"
+                        desc="Danh sách chi tiết tất cả nhiệm vụ đã giao: nhân viên, phòng ban, đầu việc, hạn hoàn thành, trạng thái."
+                        icon={<ListTodo size={22} className="text-violet-500" />}
+                        color="bg-violet-50 border-violet-100"
+                        preview={[
+                          ['Nhân viên', 'Phòng ban', 'Đầu việc', 'Hạn HT', 'TT'],
+                          ...assignments.slice(0, 3).map(a => {
+                            const emp = EMPLOYEES.find(e => e.id === a.employeeId);
+                            const task = catalog.find(c => c.id === a.catalogId);
+                            return [emp?.name||'', flatDepts.find(d=>d.id===a.departmentId)?.name||'', task?.name||'', a.deadline, a.status];
+                          }),
+                        ]}
+                        onPrint={() => handlePrintReport('task_detail')}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Booking reports */}
+                  <div>
+                    <h3 className="text-xs font-bold text-black/30 uppercase tracking-widest mb-3">Quản lý đặt chỗ</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <ReportCard
+                        code="BC-DC01"
+                        title="Thống kê sử dụng phòng họp"
+                        desc="Lượt đặt, số giờ sử dụng, tỷ lệ trung bình theo từng phòng họp."
+                        icon={<Building2 size={22} className="text-blue-500" />}
+                        color="bg-sky-50 border-sky-100"
+                        preview={[
+                          ['Phòng', 'Tổng', 'Đã XN', 'Chờ', 'Hủy'],
+                          ...ROOM_RESOURCES.map(r => {
+                            const bk = bookings.filter(b => b.resourceId === r.id);
+                            return [r.name, String(bk.length), String(bk.filter(b=>b.status==='Đã xác nhận').length), String(bk.filter(b=>b.status==='Chờ duyệt').length), String(bk.filter(b=>b.status==='Đã hủy').length)];
+                          }),
+                        ]}
+                        onPrint={() => handlePrintReport('room_stats')}
+                      />
+                      <ReportCard
+                        code="BC-DC02"
+                        title="Thống kê sử dụng xe công tác"
+                        desc="Lượt đi, tỷ lệ sử dụng, mức độ phê duyệt theo từng phương tiện."
+                        icon={<Car size={22} className="text-purple-500" />}
+                        color="bg-purple-50 border-purple-100"
+                        preview={[
+                          ['Xe', 'Tổng', 'Đã XN', 'Chờ'],
+                          ...VEHICLE_RESOURCES.map(v => {
+                            const bk = bookings.filter(b => b.resourceId === v.id);
+                            return [v.name, String(bk.length), String(bk.filter(b=>b.status==='Đã xác nhận').length), String(bk.filter(b=>b.status==='Chờ duyệt').length)];
+                          }),
+                        ]}
+                        onPrint={() => handlePrintReport('vehicle_stats')}
+                      />
+                      <ReportCard
+                        code="BC-DC03"
+                        title="Tổng hợp chi tiết đặt chỗ"
+                        desc="Danh sách đầy đủ tất cả đặt chỗ: loại TN, người đặt, thời gian, mục đích, trạng thái."
+                        icon={<CalendarDays size={22} className="text-emerald-500" />}
+                        color="bg-emerald-50 border-emerald-100"
+                        preview={[
+                          ['Loại TN', 'Tài nguyên', 'Người đặt', 'Trạng thái'],
+                          ...bookings.slice(0, 3).map(b => {
+                            const emp = EMPLOYEES.find(e => e.id === b.userId);
+                            const res = b.resourceType === 'Phòng họp' ? ROOM_RESOURCES.find(r=>r.id===b.resourceId)?.name : VEHICLE_RESOURCES.find(v=>v.id===b.resourceId)?.name;
+                            return [b.resourceType, res||'', emp?.name||'', b.status];
+                          }),
+                        ]}
+                        onPrint={() => handlePrintReport('booking_all')}
+                      />
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
             </motion.div>
           )}
 
@@ -2360,6 +2620,50 @@ function StatCard({ label, value, icon, trend }: { label: string, value: number,
       </div>
       <p className="text-black/40 text-sm font-medium">{label}</p>
       <p className="text-3xl font-bold tracking-tight mt-1">{value}</p>
+    </div>
+  );
+}
+
+function ReportCard({
+  code, title, desc, icon, color, preview, onPrint,
+}: {
+  code: string; title: string; desc: string;
+  icon: React.ReactNode; color: string;
+  preview: string[][]; onPrint: () => void;
+}) {
+  const [headers, ...rows] = preview;
+  return (
+    <div className={cn('flex flex-col rounded-2xl border p-5 bg-white gap-4', color)}>
+      <div className="flex items-start gap-3">
+        <div className="p-2 rounded-xl bg-white shadow-sm border border-black/5">{icon}</div>
+        <div className="flex-1 min-w-0">
+          <p className="text-[10px] font-bold text-black/30 tracking-widest uppercase">{code}</p>
+          <p className="font-semibold text-sm leading-tight mt-0.5">{title}</p>
+          <p className="text-xs text-black/40 mt-1 line-clamp-2">{desc}</p>
+        </div>
+      </div>
+      {headers && (
+        <div className="overflow-hidden rounded-lg border border-black/8 bg-white">
+          <table className="w-full text-[10px]">
+            <thead>
+              <tr className="bg-black/4">
+                {headers.map((h, i) => <th key={i} className="px-2 py-1.5 text-left font-semibold text-black/50 truncate max-w-[80px]">{h}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, ri) => (
+                <tr key={ri} className="border-t border-black/5">
+                  {row.map((cell, ci) => <td key={ci} className="px-2 py-1.5 text-black/70 truncate max-w-[80px]">{cell}</td>)}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <button onClick={onPrint}
+        className="flex items-center justify-center gap-2 w-full py-2 rounded-xl bg-black text-white text-xs font-semibold hover:bg-black/80 transition-colors mt-auto">
+        <Printer size={13} /> In báo cáo
+      </button>
     </div>
   );
 }
