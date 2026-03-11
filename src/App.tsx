@@ -883,7 +883,7 @@ export default function App() {
   return (
     <div className="flex h-screen bg-white font-sans text-[#1D1D1F] overflow-hidden">
       {/* HiStaff-style Dark Sidebar */}
-      <aside className={`${sidebarExpanded ? 'w-56' : 'w-[62px]'} bg-[#1a1a2e] flex flex-col transition-all duration-300 flex-shrink-0`}>
+      <aside className={`${sidebarExpanded ? 'w-56' : 'w-[62px]'} bg-[#1a1a2e] flex flex-col transition-all duration-300 flex-shrink-0 overflow-x-hidden`}>
         {/* Logo */}
         <div className="flex items-center justify-center h-14 border-b border-white/10">
           {sidebarExpanded ? (
@@ -998,11 +998,7 @@ export default function App() {
         {/* HiStaff-style Topbar */}
         <header className="h-14 bg-white border-b border-gray-100 flex items-center justify-between px-6 flex-shrink-0">
           {/* Left: Logo text */}
-          <div className="flex items-center gap-1">
-            <span className="text-[#1a1a2e] font-bold text-xl tracking-tight">Hi</span>
-            <span className="text-[#1a1a2e] font-bold text-xl tracking-tight">Staff</span>
-            <span className="text-[#f97316] font-bold text-xl">✓</span>
-          </div>
+          <div />
 
           {/* Right: actions */}
           <div className="flex items-center gap-3">
@@ -2519,7 +2515,7 @@ function SideNavItem({ active, onClick, icon, label, expanded, sub }: { active: 
       title={!expanded ? label : undefined}
       className={cn(
         "w-full flex items-center transition-all duration-200 group relative",
-        expanded ? `py-2 gap-3 rounded-lg ${sub ? 'pl-8 pr-3 ml-0' : 'px-4 mx-2'}` : "justify-center py-3 w-full",
+        expanded ? `py-2 gap-3 rounded-lg ${sub ? 'pl-8 pr-3' : 'px-3 mx-2 w-[calc(100%-16px)]'}` : "justify-center py-3 w-full",
         active
           ? "text-white bg-white/10"
           : "text-white/40 hover:text-white/70 hover:bg-white/5"
