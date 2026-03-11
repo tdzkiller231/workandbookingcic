@@ -3350,6 +3350,22 @@ function AddAssignmentModal({ catalog, onClose, onSubmit }: {
                     <option key={c.id} value={c.id}>{c.name}</option>
                   ))}
                 </select>
+                {(() => {
+                  const task = catalog.find(c => c.id === selectedTask);
+                  if (!task) return null;
+                  return (
+                    <div className="mt-2 rounded-xl bg-blue-50 border border-blue-100 px-4 py-3 space-y-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[10px] font-bold text-blue-400 uppercase tracking-wider">{task.code}</span>
+                        <span className="text-[10px] text-black/30">·</span>
+                        <span className="text-[10px] text-black/50">{task.category}</span>
+                      </div>
+                      <p className="text-xs text-black/60 leading-relaxed">
+                        {task.description || <span className="italic text-black/30">Chưa có mô tả</span>}
+                      </p>
+                    </div>
+                  );
+                })()}
               </div>
             </div>
 
